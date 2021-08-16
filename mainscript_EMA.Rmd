@@ -1,0 +1,70 @@
+---
+title: "EMA"
+output: html_notebook
+---
+
+The goal is to derive a tidy EMA data-set including a data dictionary for CHARMS and SPEAK participants; ready to be linked with the GENEActiv GGIR accelerometry data. 
+
+I have copied the raw data (completely untouched) from /Users/jessicahartmann/OneDrive/Data and files from Orygen server june 2021/CHARMS/EMA data/EXTRACTED DATA into the current home directory 
+
+
+## Getting data into  R
+
+Read files into a list, then read in the list
+
+```{r}
+library(plyr)
+library(readr)
+myfiles = list.files(path = "extracted_data", pattern="*.csv", full.names=TRUE)
+
+ema_df <- ldply(myfiles, read.csv)
+```
+
+Remove the surveys which have not been answered. 
+
+```{r}
+library(dplyr)
+ema_df <- ema_df %>%
+        filter (HAS_ANSWERS == "YES")
+```
+
+
+To do: arrange according to id and iteration; convert time vars to real time vars; link id's with general CHARMS id's and get rid of the unknown ones, calculate PA, collapse to day level; any other cleaning? 
+
+
+```{r}
+unique(ema_df$PARTICIPANT_ID) ##we need to keep only those which were part of the study 
+```
+
+```{r}
+ema_n <- ema_df %>% 
+        group_by(PARTICIPANT_ID) %>%
+        summarise(n = n()) 
+```
+
+Merge CHARMS id on data set 
+
+```{r}
+library(readxl)
+ids <- read_excel("Codebook_IDs.xlsx")
+ema_df<- merge(ema_df, ids, by = "PARTICIPANT_ID")
+
+
+ema_m <- ema_df %>%
+  merge(ids, by = "PARTICIPANT_ID") %>%  ##merge both datasets
+  select("CHARMS_ID", everything()) %>%  ##reorder with CHARMS ID as first column
+  subset(!is.na("CHARMS_ID"))           ## only keep the observations which have a CHARMS ID
+```
+
+```{r}
+write.csv(ema_m, "ema_merged.csv")
+```
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+

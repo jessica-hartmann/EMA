@@ -1,9 +1,9 @@
 ---
-title: "EMA"
+title: "EMA tidy"
 output: html_notebook
 ---
 
-The goal is to derive a tidy EMA data-set including a data dictionary for CHARMS and SPEAK participants; ready to be linked with the GENEActiv GGIR accelerometry data. 
+The goal is to derive a tidy EMA data-set including a data dictionary for CHARMS (and SPEAK) participants; ready to be linked with the GENEActiv GGIR accelerometry data. 
 
 I have copied the raw data (completely untouched) from /Users/jessicahartmann/OneDrive/Data and files from Orygen server june 2021/CHARMS/EMA data/EXTRACTED DATA into the current home directory 
 
@@ -29,13 +29,7 @@ ema_df <- ema_df %>%
 ```
 
 
-To do: arrange according to id and iteration; convert time vars to real time vars; link id's with general CHARMS id's and get rid of the unknown ones, calculate PA, collapse to day level; any other cleaning? 
-
-
-```{r}
-unique(ema_df$PARTICIPANT_ID) ##we need to keep only those which were part of the study 
-```
-
+Make overiew of how many surveys have been answered by participants (note: there are some test subjects still in there)
 ```{r}
 ema_n <- ema_df %>% 
         group_by(PARTICIPANT_ID) %>%
@@ -52,15 +46,81 @@ ema_df<- merge(ema_df, ids, by = "PARTICIPANT_ID")
 
 ema_m <- ema_df %>%
   merge(ids, by = "PARTICIPANT_ID") %>%  ##merge both datasets
-  select("CHARMS_ID", everything()) %>%  ##reorder with CHARMS ID as first column
-  subset(!is.na("CHARMS_ID"))           ## only keep the observations which have a CHARMS ID
+  select("CHARMS_ID.x", everything()) %>%  ##reorder with CHARMS ID as first column
+  subset(!is.na("CHARMS_ID.x"))       ## only keep the observations which have a CHARMS ID
+  
+
+
 ```
 
 ```{r}
-write.csv(ema_m, "ema_merged.csv")
+#write.csv(ema_m, "ema_merged.csv") ##for Holly 
 ```
 
 
+## How many unique people are in this EMA data set?
+
+```{r}
+idlist <- unique(ema_m$CHARMS_ID.x) ##make a vector 
+length(idlist) ##length of the vector 
+```
+
+Right, it's N = 14 
+
+For Holly's project, we will aggregate the dataset to one EMA observation per person per day. This makes it easier to work with and understand the data (though losing some power)  
+
+ Convert to **date** 
+```{r}
+ema_m$COMPLETED <- as.Date(ema_m$COMPLETED, format = "%d/%m/%Y")
+
+## there are a few observations with invalid date, exclude these. Check with Ann Ee why 
+ema_m <- ema_m[ which(ema_m$COMPLETED > 01/01/1970),] 
+```
+
+Create data frame with only one observation per individual per day and keep only relevant variables. This can then be merged with the sleep day summary data. 
+```{r}
+
+ema_perday <- ema_m %>% 
+            group_by(CHARMS_ID.x, COMPLETED) %>% 
+            select (-c(ITERATION, PROGRAM_VERSION, SURVEY, HAS_ANSWERS, 
+                              DELIVERED, EXPIRED, UPLOADED)) %>% ## exclude non-relevant columns
+            summarise(across(where(is.numeric), list(mean), na.rm = TRUE)) ## calculate the day mean
+            
+```
+```{r}
+##rename charms id and date for merging 
+ema_perday <- rename(ema_perday, ID = CHARMS_ID.x, calendar_date = COMPLETED) 
+```
+
+## sleep data 
+
+Read in sleep data 
+```{r}
+ggir <- read.csv("../GGIR/McKenzie_results/output_McKenzie_data/results/part5_daysummary_WW_L30M100V400_T5A5.csv")
+```
+
+Merge data sets 
+
+```{r}
+
+ema_sleep <- merge(ema_perday, ggir)
+
+
+ema_sleep<- ema_perday %>%
+  merge(ggir) %>%  ##merge both datasets
+  #select("CHARMS_ID.x", everything()) %>%  ##reorder with CHARMS ID as first column
+  #subset(!is.na("CHARMS_ID.x"))       ## only keep the observations which have a CHARMS ID
+  
+```
+
+
+TO do 
+- check ema_perday: did it calculate it correctly? What about the na.rm should be false? 
+- check if the merge has worked 
+- clean up the file names, possibly by improving the merging? 
+- send to Holly
+
+Happy 220st day in lockdown. 
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
 

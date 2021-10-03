@@ -1,8 +1,8 @@
 ---
 title: "EMA Actigraphy merge"
 output:
-  pdf_document: default
   html_notebook: default
+  pdf_document: default
 ---
 
 The goal is to derive a tidy EMA data-set including a data dictionary for CHARMS (and SPEAK) participants which is merged with the GENEActiv GGIR accelerometry (sleep) data. 
@@ -12,13 +12,17 @@ I have copied the raw EMA data (completely untouched) from /Users/jessicahartman
 
 ### Getting data into  R
 
+
+
 Load required packages
 
 ```{r}
+rm(list = ls()) ##new empty work space
 library(plyr)
 library(readr)
 library(dplyr)
 library(readxl)
+library(tidyr)
 ```
 
 Read files into a list, then read in the list
@@ -29,14 +33,17 @@ ema_df <- ldply(myfiles, read.csv)
 
 ### Some tidying 
 
-Keep only surveys which have answers 
+Keep only surveys which have answers and only items which were part of the CHARMS survey
 ```{r}
+
 ema_df <- ema_df %>%
-        filter (HAS_ANSWERS == "YES") 
+        filter (HAS_ANSWERS == "YES") %>%
+        subset(select = -(NAP.1:SUBST.10_RT.1))
+
 ```
 
 
-Make overiew of how many surveys have been answered by participants (note: there are some test subjects still in there which will be removed later)
+Make overview of how many surveys have been answered by participants (note: there are some test subjects still in there which will be removed later)
 ```{r}
 ema_n <- ema_df %>% 
         group_by(PARTICIPANT_ID) %>%
@@ -44,16 +51,16 @@ ema_n <- ema_df %>%
 ```
 
 The EMA dataset comes with its own participant id's. Now we need to add the "official" CHARMS ID which is included in Codebook_ID. 
-
+Also added in this step: age and sex. 
 ```{r}
 ids <- read_excel("Codebook_IDs.xlsx")
-ema_df<- merge(ema_df, ids, by = "PARTICIPANT_ID")
+ema_df<- merge(ema_df, ids, by = "PARTICIPANT_ID") ##check if gender and age is added
 
 
 ema_m <- ema_df %>%
-  merge(ids, by = "PARTICIPANT_ID") %>%  ##merge both datasets
-  select("CHARMS_ID.x", everything()) %>%  ##reorder with CHARMS ID as first column
-  subset(!is.na("CHARMS_ID.x"))       ## only keep the observations which have a CHARMS ID
+        subset(!is.na("CHARMS_ID")) %>% ## only keep the observations which have a CHARMS ID
+        select(CHARMS_ID, Gender, Age, everything())
+      
 ```
 
 ```{r}
@@ -64,7 +71,7 @@ ema_m <- ema_df %>%
 ### How many unique people are in this EMA data set?
 
 ```{r}
-idlist <- unique(ema_m$CHARMS_ID.x) ##make a vector 
+idlist <- unique(ema_m$CHARMS_ID) ##make a vector 
 length(idlist) ##length of the vector 
 ```
 
@@ -85,16 +92,18 @@ ema_m <- ema_m[ which(ema_m$COMPLETED > 01/01/1970),]
 Create data frame with only one observation per individual per day and keep only relevant variables. This can then be merged with the sleep day summary data. 
 ```{r}
 
-ema_perday <- ema_m %>% 
-            group_by(CHARMS_ID.x, COMPLETED) %>% 
+ema_perday <-  ema_m %>% 
+            group_by(CHARMS_ID, COMPLETED) %>% 
             select (-c(ITERATION, PROGRAM_VERSION, SURVEY, HAS_ANSWERS, 
                               DELIVERED, EXPIRED, UPLOADED)) %>% ## exclude non-relevant columns
-            summarise(across(where(is.numeric), list(mean), na.rm = TRUE)) ## calculate the day mean
+            summarise(across(where(is.numeric), list(mean), na.rm = TRUE)) %>%## calculate the mean
+           rename_with(~ sub("_1$", "", .x), everything())
             
 ```
 ```{r}
 ##rename charms id and date for merging 
-ema_perday <- rename(ema_perday, ID = CHARMS_ID.x, calendar_date = COMPLETED) 
+ema_perday <- rename(ema_perday, ID = CHARMS_ID, calendar_date = COMPLETED) 
+
 ```
 
 ## Calculating positive affect (PA) and negative affect (NA) 
@@ -108,10 +117,10 @@ ema_perday <- rename(ema_perday, ID = CHARMS_ID.x, calendar_date = COMPLETED)
 ## reverse score down 
 
 ema_perday <- ema_perday %>%
-              mutate(DOWNrev = 101 - DOWN_1) %>% ## reverse score down 
-              mutate(RELAXrev = 101 - RELAXED_1) %>%
-              mutate(pa = (CHEERF_1 + ENTHOUS_1 + DOWNrev)/3) %>% ## calculate PA
-              mutate(na = (LONELY_1 + INSECURE_1 + ANXIOUS_1 + GUILTY_1 + 
+              mutate(DOWNrev = 101 - DOWN) %>% ## reverse score down 
+              mutate(RELAXrev = 101 - RELAXED) %>%
+              mutate(pa = (CHEERF + ENTHOUS + DOWNrev)/3) %>% ## calculate PA
+              mutate(na = (LONELY + INSECURE + ANXIOUS + GUILTY + 
                              RELAXrev)/5) ## calculate NA
 
 ```
@@ -119,26 +128,69 @@ ema_perday <- ema_perday %>%
 
 ## sleep data 
 
+pre-processing: combining "day"GGIR files and "night" GGIR files to obtain all relevant variables 
+
+
 Read in sleep data 
+In GGIR 2.4.2, there is a problem with the id variable in the day summaries (wrong). Therefore, make new ID name based on file name 
 ```{r}
-ggir <- read.csv("../GGIR/McKenzie_results/output_McKenzie_data/results/part5_daysummary_WW_L30M100V400_T5A5.csv")
+ggir_p4 <- read.csv("../GGIR/McKenzie_results/output_McKenzie_data/results/part4_nightsummary_sleep_cleaned.csv")
+ggir_p4 <- ggir_p4 %>%
+          mutate(calendar_date =  as.Date(calendar_date, "%d/%m/%Y"))
+
+ggir_p5 <- read.csv("../GGIR/McKenzie_results/output_McKenzie_data/results/part5_daysummary_WW_L30M100V400_T5A5.csv")
+
+ggir_p5 <- ggir_p5 %>%
+          select(-ID) %>%
+          mutate(id = substr(filename, 1, 4)) %>%
+          mutate(ID = as.integer(id)) %>%
+          mutate(calendar_date =  as.Date(calendar_date)) %>%
+          select(ID, calendar_date, sleep_efficiency)
+
+ggir <-
+    dplyr::full_join(ggir_p4, ggir_p5, by = c("ID", "calendar_date"))
+
+
 ```
 
 Merge data sets 
 
 ```{r}
-ema_sleep_all <- merge(ema_perday, ggir, all = TRUE) ## all observations, not just 
-                                                     ## matched ones
+ema_sleep_all <- merge(ema_perday, ggir, all = TRUE) ## all observations, not just ## matched ones
+
+
+ema_sleep_all <- dplyr::full_join(ema_perday, ggir, by = c("ID", "calendar_date"))                                                     
 ```
 
 Sort and order 
 
 ```{r}
 ema_sleep_all <- ema_sleep_all %>%
-                relocate(ID, calendar_date, pa, na, sleeponset, sleeponset_ts, 
-                         wakeup, wakeup_ts, night_number, dur_spt_sleep_min:daytype)
+                select(-sleepefficiency) %>% ##from GGIR part 4 which is missing, keep from part5
+                relocate(ID, calendar_date, Age, Gender, pa, na, sleeponset:sleep_efficiency)
 
-ema_sleep_all <- ema_sleep_all[!is.na(ema_sleep_all$ID),]  ##exclude obs without ID          
+ema_sleep_all <- ema_sleep_all[!is.na(ema_sleep_all$ID),]  ##exclude obs without ID  
+
+```
+
+
+Create a day index 
+
+```{r}
+ema_sleep_all <- ema_sleep_all %>%
+                  group_by(ID) %>%  
+                  arrange(calendar_date) %>%
+                  complete(ID, calendar_date = seq.Date(min(calendar_date), 
+                                                       max(calendar_date), 
+                                                       by = "day")) %>%
+                  mutate(days = row_number()) %>% 
+                  relocate(ID, calendar_date, days) #%>% 
+                  #subset((!is.na(pa) & !is.na(sleeponset)))
+
+              
+  
+                
+
 ```
 
 save to send to Holly 
@@ -147,5 +199,8 @@ save to send to Holly
 write.csv(ema_sleep_all, "ema_sleep_merged.csv")
 ```
 
+```{r}
+
+```
 
 

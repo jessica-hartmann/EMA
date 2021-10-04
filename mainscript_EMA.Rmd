@@ -199,5 +199,111 @@ save to send to Holly
 write.csv(ema_sleep_all, "ema_sleep_merged.csv")
 ```
 
+## Some data exploration! 
+
+```{r}
+library(psych)
+library(ggplot2)
+library(data.table)
+library(entropy)
+library(nlme)
+```
+
+How many people again?
+
+```{r}
+idlist <- unique(ema_sleep_all$ID)
+length(idlist)
+```
+```{r}
+daylist <- unique(ema_sleep_all$days)
+length(daylist)
+```
+Converting to data table
+```{r}
+daily.dt <- data.table(ema_sleep_all)
+```
+
+Make a data table with the individual summaries. Just examples. It also includes ii correlations 
+```{r}
+indiv.statbasic <- daily.dt[,list(imean.pa=mean(pa, na.rm=TRUE), 
+                                  isd.pa=sd(pa, na.rm=TRUE),
+                                  iskew.pa=skew(pa, na.rm=TRUE),
+                                  ikurt.pa=kurtosi(pa, na.rm=TRUE),
+                                  icount.pa=sum(!is.na(pa)),
+                                  icorr.pawa=cor(x=pa, y=WASO, 
+                                  use="pairwise.complete.obs", method="pearson")),
+                                  by=ID]
+
+describe(indiv.statbasic)
+```
+
+Calculating intraindividual (within-person) regressions (iReg)
+
+
+```{r}
+models <- dlply(ema_sleep_all, "ID", function(df) 
+  lm(pa ~ number_of_awakenings, 
+     data = df, 
+     na.action=na.exclude))
+
+icoeffs <- ldply(models, coef)
+```
+
+the model 
+
+model with just the intercept 
+```{r}
+um.fit <- lme(fixed= pa ~ 1, 
+              random= ~ 1|ID, 
+              data=ema_sleep_all,
+              na.action=na.exclude)
+
+summary(um.fit)
+```
+```{r}
+VarCorr(um.fit)
+```
+
+```{r}
+RandomEffects <- as.numeric(VarCorr(um.fit)[,1])
+ICC_between <- RandomEffects[1]/(RandomEffects[1]+RandomEffects[2]) 
+ICC_between
+
+```
+For the other variable 
+
+```{r}
+um.fit <- lme(fixed= sleep_efficiency ~ 1, 
+              random= ~ 1|ID, 
+              data=ema_sleep_all,
+              na.action=na.exclude)
+
+summary(um.fit)
+```
+```{r}
+RandomEffects <- as.numeric(VarCorr(um.fit)[,1])
+ICC_between <- RandomEffects[1]/(RandomEffects[1]+RandomEffects[2]) 
+ICC_between
+```
+
+
+
+```{r}
+model1.fit <- lme(fixed= posaff ~ 1 + negaff.state + imean.negaff, 
+                  random= ~ 1 + negaff.state|id, 
+                  data=daily,
+                  na.action=na.exclude)
+summary(model1.fit)
+```
+
+```{r}
+lg.fit.q3 <- lme(fixed= pa ~ 1 + days + number_of_awakenings, 
+                 random= ~ 1 + days|ID, 
+                 correlation = corAR1(),
+                 data=ema_sleep_all,
+                 na.action=na.exclude)
+summary(lg.fit.q3)
+```
 
 

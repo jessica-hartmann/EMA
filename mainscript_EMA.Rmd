@@ -94,15 +94,14 @@ Create data frame with only one observation per individual per day and keep only
 
 ema_perday <-  ema_m %>% 
             group_by(CHARMS_ID, COMPLETED) %>% 
-            select (-c(ITERATION, PROGRAM_VERSION, SURVEY, HAS_ANSWERS, 
-                              DELIVERED, EXPIRED, UPLOADED)) %>% ## exclude non-relevant columns
-            summarise(across(where(is.numeric), list(mean), na.rm = TRUE)) %>%## calculate the mean
+            select (-c(ITERATION, PROGRAM_VERSION, SURVEY,                HAS_ANSWERS, DELIVERED, EXPIRED, UPLOADED)) %>% ## exclude non-relevant columns
+            dplyr::summarise(across(where(is.numeric), list(mean), na.rm = TRUE)) %>%   ## calculate the mean
            rename_with(~ sub("_1$", "", .x), everything())
             
 ```
 ```{r}
 ##rename charms id and date for merging 
-ema_perday <- rename(ema_perday, ID = CHARMS_ID, calendar_date = COMPLETED) 
+ema_perday <- dplyr::rename(ema_perday, ID = CHARMS_ID, calendar_date = COMPLETED) 
 
 ```
 
@@ -156,7 +155,7 @@ ggir <-
 Merge data sets 
 
 ```{r}
-ema_sleep_all <- merge(ema_perday, ggir, all = TRUE) ## all observations, not just ## matched ones
+#ema_sleep_all <- merge(ema_perday, ggir, all = TRUE) ## all observations, not just ## matched ones
 
 
 ema_sleep_all <- dplyr::full_join(ema_perday, ggir, by = c("ID", "calendar_date"))                                                     
@@ -183,7 +182,7 @@ ema_sleep_all <- ema_sleep_all %>%
                   complete(ID, calendar_date = seq.Date(min(calendar_date), 
                                                        max(calendar_date), 
                                                        by = "day")) %>%
-                  mutate(days = row_number()) %>% 
+                  dplyr::mutate(days = row_number()) %>% 
                   relocate(ID, calendar_date, days) #%>% 
                   #subset((!is.na(pa) & !is.na(sleeponset)))
 
@@ -192,12 +191,31 @@ ema_sleep_all <- ema_sleep_all %>%
                 
 
 ```
+Create day lead values so pa next day is linked with sleep previous day  
+
+If I do not put dplyr in front of it, it produces wrong results!!!!
+```{r}
+ema_sleep_all <- ema_sleep_all %>% 
+        group_by(ID) %>%
+        dplyr::mutate(pa_lead = lead(pa, order_by = days)) %>%
+        dplyr::mutate(na_lead = lead(na, order_by = days)) %>%
+        dplyr::relocate(ID, calendar_date, days, Age, Gender, pa, pa_lead, na, na_lead)
+       
+```
+
+
 
 save to send to Holly 
 
 ```{r}
 write.csv(ema_sleep_all, "ema_sleep_merged.csv")
 ```
+
+```{r}
+#ema_sleep_all <- read.csv("ema_sleep_merged.csv")
+```
+
+
 
 ## Some data exploration! 
 
@@ -306,4 +324,16 @@ lg.fit.q3 <- lme(fixed= pa ~ 1 + days + number_of_awakenings,
 summary(lg.fit.q3)
 ```
 
+blablabla
+
+
+
+```{r}
+ema_sleep_all <- ema_sleep_all %>% 
+        group_by(ID) %>%
+        mutate(pa_lead = lead(pa, order_by = days)) %>%
+        mutate(na_lead = lead(na, order_by = days)) %>%
+        relocate(ID, calendar_date, days, Age, Gender, pa, pa_lead,          na, na_lead)
+       
+```
 
